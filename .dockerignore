@@ -1,0 +1,5 @@
+.git
+dist/
+lib/
+node_modules/
+oxigraph-data/

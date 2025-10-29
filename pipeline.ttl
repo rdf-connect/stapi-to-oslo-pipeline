@@ -1,0 +1,196 @@
+@prefix rdfc: <https://w3id.org/rdf-connect#>.
+@prefix owl: <http://www.w3.org/2002/07/owl#>.
+@prefix stapi: <https://w3id.org/stapi#> .
+@prefix ex: <http://example.org/>.
+@prefix tree: <https://w3id.org/tree#>.
+@prefix sosa: <http://www.w3.org/ns/sosa/>.
+@prefix ssn: <http://www.w3.org/ns/ssn/>.
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
+@prefix rdfl: <https://w3id.org/rdf-lens/ontology#>.
+
+
+### Import runners and processors
+<> owl:imports <./node_modules/@rdfc/js-runner/index.ttl>.
+<> owl:imports <./node_modules/ldes-client/processor.ttl>.
+<> owl:imports <./node_modules/@rdfc/log-processor-ts/processor.ttl>.
+# <> owl:imports <./node_modules/@rdfc/file-utils-processors-ts/processors.ttl>.
+
+# <> owl:imports <./node_modules/@rdfc/http-utils-processor-ts/processors.ttl>.
+<> owl:imports <./processors/http-utils-processor-ts/processors.ttl>.
+
+<> owl:imports <./processors/sparql-processor-ts/processor.ttl>.
+
+<> owl:imports <./node_modules/@rdfc/sds-processors-ts/configs/sdsify.ttl>.
+<> owl:imports <./node_modules/@rdfc/sparql-ingest-processor-ts/processors.ttl>.
+
+### Define the channels
+<members> a rdfc:Reader, rdfc:Writer.
+<mapped> a rdfc:Reader, rdfc:Writer.
+<sds> a rdfc:Reader, rdfc:Writer.
+
+### Define the pipeline
+<> a rdfc:Pipeline;
+   rdfc:consistsOf [
+       rdfc:instantiates rdfc:NodeRunner;
+       rdfc:processor <ldes-client>, <sparql>, <fetch>;
+    #    rdfc:processor <ldes-client>, <sparql>, <fetch>, <logger>;
+   ].
+
+
+### Define the processors
+
+<ldes-client> a rdfc:LdesClient;
+    rdfc:FetchConfig [ 
+        rdfc:concurrent 1;
+        rdfc:retry [
+            rdfc:maxRetries 15;
+        ];
+    ] ;
+    rdfc:url [ a rdfl:EnvVariable;
+		rdfl:envDefault "";
+		rdfl:envKey "URL";
+	];
+    rdfc:follow true;
+    rdfc:output <members> .
+
+<sparql> a rdfc:SparqlProcessor;
+    rdfc:reader <members>;
+    rdfc:writer <mapped>;
+    rdfc:query """
+
+    PREFIX rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX xsd:      <http://www.w3.org/2001/XMLSchema#>
+    PREFIX sosa:     <http://www.w3.org/ns/sosa/>
+    PREFIX ssn:      <http://www.w3.org/ns/ssn/>
+    PREFIX time:     <http://www.w3.org/2006/time#>
+    PREFIX geo:      <http://www.opengis.net/ont/geosparql#>
+    PREFIX sf:       <http://www.opengis.net/ont/sf#>
+    PREFIX prov:     <http://www.w3.org/ns/prov#>
+    PREFIX dct:      <http://purl.org/dc/terms/>
+    PREFIX stapi:    <https://w3id.org/stapi#>
+    PREFIX verkeer:  <https://data.vlaanderen.be/ns/verkeersmetingen#>
+    PREFIX impl:     <https://implementatie.data.vlaanderen.be/ns/vsds-verkeersmetingen#>
+    PREFIX iso19156-ob: <http://def.isotc211.org/iso19156/2011/Observation#>
+    PREFIX iso19156-sp: <http://def.isotc211.org/iso19156/2011/SamplingPoint#>
+    PREFIX LinkDirectionValue: <https://inspire.ec.europa.eu/codelist/LinkDirectionValue/>
+    PREFIX MeasureTypes: <http://def.isotc211.org/iso19103/2015/MeasureTypes#>
+    PREFIX VkmMeetInstrumentType: <https://data.vlaanderen.be/doc/concept/VkmMeetInstrumentType/>
+    PREFIX VkmVerkeersKenmerkType: <https://data.vlaanderen.be/doc/concept/VkmVerkeersKenmerkType/>
+    PREFIX VkmVoertuigType: <https://data.vlaanderen.be/doc/concept/VkmVoertuigType/>
+    PREFIX cl-mit: <https://data.vlaanderen.be/doc/concept/VkmMeetInstrumentType/>
+    PREFIX cl-vrt: <https://data.vlaanderen.be/doc/concept/VkmVoertuigType/>
+    PREFIX cl-vkt: <https://data.vlaanderen.be/doc/concept/VkmVerkeersKenmerkType/>
+    PREFIX impl: <https://implementatie.data.vlaanderen.be/ns/vsds-verkeersmetingen#>
+    PREFIX iso19103-mp: <http://def.isotc211.org/iso19103/2015/MeasureTypes#>
+    PREFIX time: <http://www.w3.org/2006/time#>
+    PREFIX weg: <https://data.vlaanderen.be/ns/weg#>
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+
+CONSTRUCT {
+
+    ?obs a sosa:Observation, impl:Verkeerstelling, verkeer:Verkeersmeting ;
+
+        iso19156-ob:OM_Observation.phenomenonTime  ?ptime;
+        sosa:phenomenonTime ?ptime;
+
+        prov:generatedAtTime  ?rtime ;
+        sosa:resultTime ?rtime;
+
+        sosa:madeBySensor  ?sensor ;
+
+        verkeer:geobserveerdObject  _:object ;
+
+        impl:Verkeerstelling.geobserveerdKenmerk  ?obsprop ;
+        sosa:observedProperty ?obsprop ;
+        
+        impl:Verkeerstelling.tellingresultaat  ?doubleresult ;
+        sosa:hasSimpleResult ?result .
+
+    ?ptime    rdf:type  time:TemporalEntity;
+        time:hasBeginning    ?start;
+        time:hasXSDDuration  ?duration .
+
+    ?start    rdf:type                 time:Instant;
+        time:inXSDDateTimeStamp  ?startTime .
+
+    ?sensor    rdf:type    sosa:Sensor;
+        dct:type  cl-mit:telraam .
+
+    ?obsprop    rdf:type impl:Verkeerstellingkenmerk, sosa:ObservedProperty;
+        verkeer:voertuigType  cl-vrt:auto;
+        impl:Verkeerstellingkenmerk.kenmerktype  cl-vkt:aantal .
+
+    _:object     rdf:type  verkeer:Verkeersmeetpunt ;
+        iso19156-sp:SF_SamplingPoint.shape ?geom .
+
+    ?geom    rdf:type         sf:Point;
+        geo:asWKT  ?wkt .
+
+} WHERE {
+
+    # Observation alignment
+    ?obs rdf:type stapi:Observation ;
+        stapi:datastream ?ds ;
+        stapi:featureOfInterest ?foi ;
+        stapi:result ?result ;
+        stapi:resultTime ?rtime ;
+        stapi:phenomenonTime ?ptime .
+
+    # Phenomenon time interval structure
+    ?ptime time:hasBeginning ?start .
+    ?start time:inXSDDateTimeStamp ?startTime .
+    OPTIONAL { ?ptime time:hasEnd ?end . }
+    OPTIONAL { ?end time:inXSDDateTimeStamp ?endTime . }
+    OPTIONAL { ?ptime time:hasXSDDuration ?duration . }
+
+    # Feature of interest → geometry
+    ?foi rdf:type stapi:FeatureOfInterest ;
+        stapi:name ?foiName .
+    ?thing stapi:locations ?loc .
+
+    # location mapping
+    ?loc geo:hasGeometry ?geom .
+    ?geom geo:asWKT ?wkt ;
+        geo:long ?long ;
+        geo:lat ?lat .
+
+    # Sensor
+    ?ds stapi:sensor ?sensor ;
+        stapi:observedProperty ?obsprop .
+
+
+    BIND(xsd:double(?result) AS ?doubleresult)
+}
+
+""".
+
+<fetch> a rdfc:HttpFetch;
+    rdfc:url [ a rdfl:EnvVariable;
+		rdfl:envDefault "http://localhost:7878/store?default";
+		rdfl:envKey "STORE";
+	]; 
+    rdfc:reader <mapped>;
+    rdfc:options [
+        rdfc:method "POST";
+        rdfc:headers "Content-Type: text/turtle";
+        rdfc:acceptStatusCodes "200-300";
+        rdfc:bodyCanBeEmpty true;
+        rdfc:timeOutMilliseconds 5000;
+        rdfc:errorsAreFatal false 
+    ].
+    
+###########
+# Logging #
+###########
+
+# Processor to log the output
+<logger> a rdfc:LogProcessorJs;
+    rdfc:reader <mapped>;
+    rdfc:level "info";
+    rdfc:label "log".
+
+
+
+    
